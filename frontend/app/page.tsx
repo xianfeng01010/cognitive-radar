@@ -10,6 +10,7 @@ interface CardItem {
   url: string;
   cache_level: string;
   trust_score: number;
+  published_date: string;
 }
 
 interface CardDetail {
@@ -186,9 +187,14 @@ export default function Home() {
               {card.content_preview && (
                 <p className="text-sm text-gray-500 leading-relaxed line-clamp-4">{card.content_preview}</p>
               )}
-              {card.source && (
-                <p className="text-xs text-gray-400 mt-2 truncate">来源: {card.source}</p>
-              )}
+              <div className="flex items-center gap-3 mt-2">
+                {card.source && (
+                  <span className="text-xs text-gray-400 truncate">来源: {card.source}</span>
+                )}
+                {card.published_date && (
+                  <span className="text-xs text-gray-400">{card.published_date}</span>
+                )}
+              </div>
             </div>
           ))}
         </div>

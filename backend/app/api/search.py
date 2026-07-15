@@ -80,7 +80,7 @@ async def scan(req: ScanRequest, db: AsyncSession = Depends(get_db)):
     searxng_results = []
     if not req.skip_searxng and (l1_count + len(l2_results)) < 15:
         try:
-            searxng_results = await searxng_client.search(keyword, limit=15)
+            searxng_results = await searxng_client.search(keyword, limit=15, time_range="month")
         except Exception as e:
             logger.warning(f"SearXNG search failed: {e}")
 
@@ -95,6 +95,7 @@ async def scan(req: ScanRequest, db: AsyncSession = Depends(get_db)):
             url=r.get("url", ""),
             cache_level="L1",
             trust_score=float(r.get("trust_score", 50.0)),
+            published_date=r.get("published_at", "") or "",
         ))
 
     for r in l2_results:
@@ -109,6 +110,7 @@ async def scan(req: ScanRequest, db: AsyncSession = Depends(get_db)):
         ))
 
     for r in searxng_results:
+        pd = r.get("publishedDate") or ""
         cards.append(CardItem(
             id=f"searxng-{r.get('url', '')[:32]}",
             title=r.get("title", ""),
@@ -117,6 +119,7 @@ async def scan(req: ScanRequest, db: AsyncSession = Depends(get_db)):
             url=r.get("url", ""),
             cache_level="SearXNG",
             trust_score=30.0,
+            published_date=str(pd) if pd else "",
         ))
 
     all_raw = l1_results + l2_results
@@ -159,42 +162,95 @@ async def scan(req: ScanRequest, db: AsyncSession = Depends(get_db)):
     )
 
 
+# --- Local template extraction (zero LLM, zero tokens, instant) ---
+
+_SENTENCE_SPLIT = re.compile(r'[。！？\n.!?]')
+_CN_NAME = re.compile(r'[\u4e00-\u9fa5]{2,4}(?:公司|大学|研究所|研究院|机构|集团|实验室|团队|组织|政府|部门)')
+_EN_NAME = re.compile(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b')
+_EN_ORG = re.compile(r'\b[A-Z][A-Za-z]+(?:\s(?:Inc|Corp|Ltd|LLC|GmbH|Co|Group|Labs|Research|Institute|University|Foundation|Association))\b')
+_DATE_PATTERNS = re.compile(r'(\d{4}年\d{1,2}月\d{1,2}日|\d{4}-\d{1,2}-\d{1,2}|\d{4}年\d{1,2}月|\d{4}年|今年|去年|上个月|本周|近日|近期|最近)')
+
+
+def _split_sentences(text: str) -> list[str]:
+    parts = _SENTENCE_SPLIT.split(text)
+    return [p.strip() for p in parts if p.strip() and len(p.strip()) > 5]
+
+
+def _extract_tldr(content: str, title: str) -> str:
+    sentences = _split_sentences(content)
+    if sentences:
+        return sentences[0][:80]
+    return title[:80]
+
+
+def _extract_key_findings(content: str, keyword: str, max_n: int = 3) -> list[str]:
+    sentences = _split_sentences(content)
+    if not sentences:
+        return []
+    kw_lower = keyword.lower()
+    scored = []
+    for s in sentences:
+        score = 0
+        if kw_lower in s.lower():
+            score += 2
+        if any(w in s for w in keyword.split() if len(w) > 1):
+            score += 1
+        if len(s) > 15:
+            score += 1
+        if score > 0:
+            scored.append((score, s))
+    if not scored:
+        return sentences[:max_n]
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [s for _, s in scored[:max_n]]
+
+
+def _extract_entities(content: str, title: str) -> list[str]:
+    text = f"{title} {content}"
+    entities = set()
+    for m in _CN_NAME.finditer(text):
+        entities.add(m.group())
+    for m in _EN_NAME.finditer(text):
+        entities.add(m.group())
+    for m in _EN_ORG.finditer(text):
+        entities.add(m.group())
+    return list(entities)[:8]
+
+
+def _extract_timeline(content: str) -> list[str]:
+    sentences = _split_sentences(content)
+    timeline = []
+    for s in sentences:
+        if _DATE_PATTERNS.search(s):
+            timeline.append(s[:100])
+    return timeline[:5]
+
+
+def _extract_conclusion(content: str) -> str:
+    sentences = _split_sentences(content)
+    if not sentences:
+        return ""
+    conclusion_keywords = ["综上", "因此", "总之", "可见", "由此", "结论", "启示", "意味着", "表明", "说明"]
+    for s in reversed(sentences):
+        if any(kw in s for kw in conclusion_keywords):
+            return s[:120]
+    return sentences[-1][:120] if sentences else ""
+
+
 @router.post("/detail", response_model=CardDetailResponse)
 async def get_card_detail(req: CardDetailRequest):
-    try:
-        prompt = f"""请分析以下信息并生成结构化摘要。
+    content = req.content or ""
+    title = req.title or ""
 
-标题：{req.title}
-内容：{req.content[:2000]}
-来源：{req.source}
-URL：{req.url}
-
-请返回JSON格式，包含以下字段：
-{{
-    "tldr": "一句话摘要，不超过50字",
-    "key_findings": ["关键发现1", "关键发现2", "关键发现3"],
-    "key_entities": ["涉及的人物或机构"],
-    "timeline": ["时间点: 事件"],
-    "conclusion": "结论或启示"
-}}
-"""
-        result = await llm_json(prompt, system="你是一个信息分析助手，只返回JSON，不要加markdown代码块。", max_tokens=1000)
-        return CardDetailResponse(
-            title=req.title,
-            tldr=result.get("tldr", ""),
-            key_findings=result.get("key_findings", []),
-            key_entities=result.get("key_entities", []),
-            timeline=result.get("timeline", []),
-            conclusion=result.get("conclusion", ""),
-            source_url=req.url,
-        )
-    except Exception as e:
-        logger.error(f"Card detail generation failed: {e}")
-        return CardDetailResponse(
-            title=req.title,
-            tldr="摘要生成失败",
-            source_url=req.url,
-        )
+    return CardDetailResponse(
+        title=title,
+        tldr=_extract_tldr(content, title),
+        key_findings=_extract_key_findings(content, req.source or title),
+        key_entities=_extract_entities(content, title),
+        timeline=_extract_timeline(content),
+        conclusion=_extract_conclusion(content),
+        source_url=req.url,
+    )
 
 
 @router.get("/strength")

@@ -49,6 +49,7 @@ class CardItem(BaseModel):
     url: str = ""
     cache_level: str = ""  # L1, L2, SearXNG
     trust_score: float = 0.0
+    published_date: str = ""
 
 
 class ScanResult(BaseModel):
