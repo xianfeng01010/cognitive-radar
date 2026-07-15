@@ -2,15 +2,15 @@ import re
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from app.db import get_db
 from app.models.history import SearchHistory
-from app.models.source import Source, Entry
+from app.models.source import Source
 from app.integrations import meilisearch_client as meili
 from app.integrations.searxng_client import searxng_client
-from app.integrations.opencode import llm_json, get_embedding
-from app.schemas import ScanRequest, ScanResult
+from app.integrations.opencode import llm_json
+from app.schemas import ScanRequest, ScanResult, CardItem, CardDetailRequest, CardDetailResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -84,13 +84,48 @@ async def scan(req: ScanRequest, db: AsyncSession = Depends(get_db)):
         except Exception as e:
             logger.warning(f"SearXNG search failed: {e}")
 
-    all_results = l1_results + l2_results
-    clustered = await auto_cluster(all_results, keyword) if len(all_results) >= 3 else None
-    report = await generate_report(keyword, strength, all_results)
+    cards: list[CardItem] = []
+
+    for r in l1_results:
+        cards.append(CardItem(
+            id=str(r.get("id", "")),
+            title=r.get("title", ""),
+            content_preview=(r.get("content", "") or "")[:200],
+            source=r.get("source_id", ""),
+            url=r.get("url", ""),
+            cache_level="L1",
+            trust_score=float(r.get("trust_score", 50.0)),
+        ))
+
+    for r in l2_results:
+        cards.append(CardItem(
+            id=str(r.get("id", "")),
+            title=r.get("title", ""),
+            content_preview=(r.get("outcome", "") or r.get("content", "") or "")[:200],
+            source=r.get("source_url", ""),
+            url=r.get("source_url", r.get("url", "")),
+            cache_level="L2",
+            trust_score=float(r.get("trust_score", 50.0)),
+        ))
+
+    for r in searxng_results:
+        cards.append(CardItem(
+            id=f"searxng-{r.get('url', '')[:32]}",
+            title=r.get("title", ""),
+            content_preview=(r.get("content", "") or "")[:200],
+            source=r.get("engine", ""),
+            url=r.get("url", ""),
+            cache_level="SearXNG",
+            trust_score=30.0,
+        ))
+
+    all_raw = l1_results + l2_results
+    clustered = await auto_cluster(all_raw, keyword) if len(all_raw) >= 3 else None
+    report = await generate_report(keyword, strength, all_raw)
 
     history = SearchHistory(
         keyword=keyword,
-        result_count=len(all_results) + len(searxng_results),
+        result_count=len(cards),
         search_strength=strength,
     )
     db.add(history)
@@ -117,13 +152,49 @@ async def scan(req: ScanRequest, db: AsyncSession = Depends(get_db)):
     return ScanResult(
         keyword=keyword,
         strength=strength,
-        l1_results=l1_results,
-        l2_results=l2_results,
-        searxng_results=searxng_results,
-        total=len(all_results) + len(searxng_results),
+        cards=cards,
+        total=len(cards),
         clustered=clustered,
         report=report,
     )
+
+
+@router.post("/detail", response_model=CardDetailResponse)
+async def get_card_detail(req: CardDetailRequest):
+    try:
+        prompt = f"""请分析以下信息并生成结构化摘要。
+
+标题：{req.title}
+内容：{req.content[:2000]}
+来源：{req.source}
+URL：{req.url}
+
+请返回JSON格式，包含以下字段：
+{{
+    "tldr": "一句话摘要，不超过50字",
+    "key_findings": ["关键发现1", "关键发现2", "关键发现3"],
+    "key_entities": ["涉及的人物或机构"],
+    "timeline": ["时间点: 事件"],
+    "conclusion": "结论或启示"
+}}
+"""
+        result = await llm_json(prompt, system="你是一个信息分析助手，只返回JSON，不要加markdown代码块。", max_tokens=1000)
+        return CardDetailResponse(
+            title=req.title,
+            tldr=result.get("tldr", ""),
+            key_findings=result.get("key_findings", []),
+            key_entities=result.get("key_entities", []),
+            timeline=result.get("timeline", []),
+            conclusion=result.get("conclusion", ""),
+            source_url=req.url,
+        )
+    except Exception as e:
+        logger.error(f"Card detail generation failed: {e}")
+        return CardDetailResponse(
+            title=req.title,
+            tldr="摘要生成失败",
+            source_url=req.url,
+        )
 
 
 @router.get("/strength")

@@ -6,16 +6,14 @@ class SearXNGClient:
     def __init__(self):
         self.base_url = settings.SEARXNG_URL.rstrip("/")
 
-    async def search(self, query: str, engines: str = "google,bing,duckduckgo", limit: int = 20) -> list[dict]:
+    async def search(self, query: str, engines: str = "", limit: int = 20) -> list[dict]:
+        params = {"q": query, "format": "json", "pageno": 1}
+        if engines:
+            params["engines"] = engines
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.base_url}/search",
-                params={
-                    "q": query,
-                    "format": "json",
-                    "engines": engines,
-                    "pageno": 1,
-                },
+                params=params,
                 timeout=15.0,
             )
             response.raise_for_status()

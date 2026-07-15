@@ -41,15 +41,40 @@ class ScanRequest(BaseModel):
     skip_searxng: bool = False
 
 
+class CardItem(BaseModel):
+    id: str = ""
+    title: str = ""
+    content_preview: str = ""
+    source: str = ""
+    url: str = ""
+    cache_level: str = ""  # L1, L2, SearXNG
+    trust_score: float = 0.0
+
+
 class ScanResult(BaseModel):
     keyword: str
     strength: str
-    l1_results: list[dict] = []
-    l2_results: list[dict] = []
-    searxng_results: list[dict] = []
+    cards: list[CardItem] = []
     total: int = 0
     clustered: Optional[dict] = None
     report: Optional[dict] = None
+
+
+class CardDetailRequest(BaseModel):
+    title: str
+    content: str = ""
+    url: str = ""
+    source: str = ""
+
+
+class CardDetailResponse(BaseModel):
+    title: str
+    tldr: str = ""
+    key_findings: list[str] = []
+    key_entities: list[str] = []
+    timeline: list[str] = []
+    conclusion: str = ""
+    source_url: str = ""
 
 
 class PushOut(BaseModel):

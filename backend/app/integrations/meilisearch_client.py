@@ -50,16 +50,22 @@ async def search_entries(query: str, limit: int = 20, filters: str = "") -> list
     opts = {"limit": limit}
     if filters:
         opts["filter"] = filters
-    resp = await client.post(f"/indexes/{INDEX_ENTRIES}/search", json={"q": query, **opts})
-    resp.raise_for_status()
-    return resp.json().get("hits", [])
+    try:
+        resp = await client.post(f"/indexes/{INDEX_ENTRIES}/search", json={"q": query, **opts})
+        resp.raise_for_status()
+        return resp.json().get("hits", [])
+    except Exception:
+        return []
 
 
 async def search_cases(query: str, limit: int = 10) -> list[dict]:
     client = await _get_client()
-    resp = await client.post(f"/indexes/{INDEX_CASES}/search", json={"q": query, "limit": limit})
-    resp.raise_for_status()
-    return resp.json().get("hits", [])
+    try:
+        resp = await client.post(f"/indexes/{INDEX_CASES}/search", json={"q": query, "limit": limit})
+        resp.raise_for_status()
+        return resp.json().get("hits", [])
+    except Exception:
+        return []
 
 
 async def health() -> dict:
