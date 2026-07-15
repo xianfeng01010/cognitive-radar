@@ -60,7 +60,7 @@ async def system_health():
 
     # LLM
     try:
-        resp = await llm_complete("ping", max_tokens=5)
+        resp = await llm_complete("ping", max_tokens=5, task_type="health_check", db=db)
         components["llm"] = "healthy"
     except Exception as e:
         components["llm"] = f"unhealthy: {e}"

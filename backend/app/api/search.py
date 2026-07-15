@@ -35,21 +35,21 @@ def classify_strength(keyword: str) -> str:
     return "medium"
 
 
-async def auto_cluster(results: list[dict], keyword: str) -> dict | None:
+async def auto_cluster(results: list[dict], keyword: str, db: AsyncSession) -> dict | None:
     if len(results) < 3:
         return None
     try:
         titles = [r.get("title", "") for r in results[:20]]
         prompt = f"搜索关键词：{keyword}\n\n以下是一组搜索结果标题：\n" + "\n".join(f"{i+1}. {t}" for i, t in enumerate(titles))
         prompt += "\n\n请将这些结果聚类，返回JSON格式：{\"clusters\": [{\"label\": \"标签\", \"items\": [序号列表]}]}"
-        result = await llm_json(prompt, system="你是一个信息聚类助手，只返回JSON。", max_tokens=800)
+        result = await llm_json(prompt, system="你是一个信息聚类助手，只返回JSON。", max_tokens=800, task_type="cluster", db=db)
         return result
     except Exception as e:
         logger.warning(f"Clustering failed: {e}")
         return None
 
 
-async def generate_report(keyword: str, strength: str, results: list[dict]) -> dict | None:
+async def generate_report(keyword: str, strength: str, results: list[dict], db: AsyncSession) -> dict | None:
     if strength == "weak" or len(results) == 0:
         return None
     try:
@@ -59,7 +59,7 @@ async def generate_report(keyword: str, strength: str, results: list[dict]) -> d
             prompt = f"搜索关键词：{keyword}\n\n以下是相关搜索结果：\n{context}\n\n请生成一份结构化报告，包含：1) 摘要 2) 关键发现 3) 人物/机构 4) 时间线 5) 结论。返回JSON格式。"
         else:
             prompt = f"搜索关键词：{keyword}\n\n以下是相关搜索结果：\n{context}\n\n请生成简短摘要和关键发现。返回JSON格式：{{\"summary\": \"\", \"key_findings\": []}}。"
-        return await llm_json(prompt, system="你是一个信息分析助手，只返回JSON。", max_tokens=1500)
+        return await llm_json(prompt, system="你是一个信息分析助手，只返回JSON。", max_tokens=1500, task_type="report", db=db)
     except Exception as e:
         logger.warning(f"Report generation failed: {e}")
         return None
@@ -137,8 +137,8 @@ async def scan(req: ScanRequest, db: AsyncSession = Depends(get_db)):
 
     # Convert CardItem to dict for LLM helper functions that use .get()
     all_cards_dicts = [c.model_dump() for c in all_cards[:20]]
-    clustered = await auto_cluster(all_cards_dicts, keyword) if total >= 3 else None
-    report = await generate_report(keyword, strength, all_cards_dicts[:5])
+    clustered = await auto_cluster(all_cards_dicts, keyword, db) if total >= 3 else None
+    report = await generate_report(keyword, strength, all_cards_dicts[:5], db)
 
     history = SearchHistory(
         keyword=keyword,

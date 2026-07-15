@@ -59,7 +59,7 @@ async def _verify_item(buffer_item_id: str):
             for r in all_results[:5]:
                 prompt += f"- {r.get('title', '')}: {r.get('content', '')[:100]}\n"
             prompt += "\n请判断信息可信度，返回JSON: {\"confidence\": 0-100, \"verified\": bool, \"reason\": \"\"}"
-            verdict = await llm_json(prompt, system="你是信息验证助手，只返回JSON。", max_tokens=300)
+            verdict = await llm_json(prompt, system="你是信息验证助手，只返回JSON。", max_tokens=300, task_type="verify", db=db)
 
             confidence = verdict.get("confidence", 50)
             if verdict.get("verified", False):

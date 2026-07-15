@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "deepseek-v4-flash-free"
     EMBEDDING_MODEL: str = "google/gemini-embedding-001"
 
+    VOLC_API_KEY: str = ""
+    VOLC_MODEL_ENDPOINT: str = ""
+    LLM_PROVIDER: str = "opencode"
+
     RSS_ENGINE_TYPE: str = "miniflux"
 
     model_config = {"env_file": ".env", "extra": "ignore"}

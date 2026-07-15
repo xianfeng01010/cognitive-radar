@@ -99,6 +99,9 @@ services:
       LLM_API_KEY: ${OPENCODE_API_KEY}
       LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash-free}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-google/gemini-embedding-001}
+      VOLC_API_KEY: ${VOLC_API_KEY:-}
+      VOLC_MODEL_ENDPOINT: ${VOLC_MODEL_ENDPOINT:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-opencode}
       RSS_ENGINE_TYPE: miniflux
     volumes:
       - ./backend:/app
@@ -131,6 +134,9 @@ services:
       LLM_API_KEY: ${OPENCODE_API_KEY}
       LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash-free}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-google/gemini-embedding-001}
+      VOLC_API_KEY: ${VOLC_API_KEY:-}
+      VOLC_MODEL_ENDPOINT: ${VOLC_MODEL_ENDPOINT:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-opencode}
       RSS_ENGINE_TYPE: miniflux
     volumes:
       - ./backend:/app
@@ -157,6 +163,9 @@ services:
       LLM_API_KEY: ${OPENCODE_API_KEY}
       LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash-free}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-google/gemini-embedding-001}
+      VOLC_API_KEY: ${VOLC_API_KEY:-}
+      VOLC_MODEL_ENDPOINT: ${VOLC_MODEL_ENDPOINT:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-opencode}
     volumes:
       - ./backend:/app
     depends_on:
