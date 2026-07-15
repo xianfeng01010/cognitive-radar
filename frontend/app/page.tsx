@@ -11,6 +11,17 @@ interface CardItem {
   cache_level: string;
   trust_score: number;
   published_date: string;
+  thumbnail: string;
+  engines: string[];
+}
+
+interface ScanResultData {
+  strength: string;
+  total: number;
+  keyword: string;
+  page: number;
+  page_size: number;
+  total_pages: number;
 }
 
 interface CardDetail {
@@ -50,13 +61,16 @@ const tierColors: Record<string, string> = {
   low: "bg-gray-100 text-gray-600",
 };
 
+const PAGE_SIZE = 12;
+
 export default function Home() {
   const [pushes, setPushes] = useState<Push[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searching, setSearching] = useState(false);
   const [cards, setCards] = useState<CardItem[]>([]);
-  const [searchMeta, setSearchMeta] = useState<{ strength: string; total: number; keyword: string } | null>(null);
+  const [searchMeta, setSearchMeta] = useState<ScanResultData | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [selectedCard, setSelectedCard] = useState<CardItem | null>(null);
   const [detail, setDetail] = useState<CardDetail | null>(null);
@@ -75,21 +89,33 @@ export default function Home() {
 
   useEffect(() => { loadPushes(); }, [loadPushes]);
 
-  const handleSearch = async () => {
+  const handleSearch = async (page: number = 1) => {
     if (!searchKeyword.trim()) return;
     setSearching(true);
     setCards([]);
     setSearchMeta(null);
+    setCurrentPage(page);
     try {
-      const result = await api.scan(searchKeyword);
+      const result = await api.scan(searchKeyword, false, page, PAGE_SIZE);
       setCards(result.cards || []);
-      setSearchMeta({ strength: result.strength, total: result.total, keyword: result.keyword });
+      setSearchMeta({
+        strength: result.strength,
+        total: result.total,
+        keyword: result.keyword,
+        page: result.page,
+        page_size: result.page_size,
+        total_pages: result.total_pages,
+      });
     } catch (e: any) {
-      setSearchMeta({ strength: "error", total: 0, keyword: searchKeyword });
+      setSearchMeta({ strength: "error", total: 0, keyword: searchKeyword, page: 1, page_size: PAGE_SIZE, total_pages: 1 });
       console.error(e);
     } finally {
       setSearching(false);
     }
+  };
+
+  const handlePageChange = (page: number) => {
+    handleSearch(page);
   };
 
   const handleCardClick = async (card: CardItem) => {
@@ -133,6 +159,17 @@ export default function Home() {
     } catch (e) { console.error(e); }
   };
 
+  // Build page number list for pagination
+  const getPageNumbers = (): number[] => {
+    if (!searchMeta) return [];
+    const { page, total_pages } = searchMeta;
+    const nums: number[] = [];
+    const start = Math.max(1, page - 2);
+    const end = Math.min(total_pages, page + 2);
+    for (let i = start; i <= end; i++) nums.push(i);
+    return nums;
+  };
+
   return (
     <div className="space-y-6">
       {/* Search bar */}
@@ -142,12 +179,12 @@ export default function Home() {
             type="text"
             value={searchKeyword}
             onChange={(e) => setSearchKeyword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch(1)}
             placeholder="输入搜索关键词..."
             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <button
-            onClick={handleSearch}
+            onClick={() => handleSearch(1)}
             disabled={searching}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
@@ -164,6 +201,7 @@ export default function Home() {
             强度: {searchMeta.strength}
           </span>
           <span className="text-xs text-gray-400">共 {searchMeta.total} 条</span>
+          <span className="text-xs text-gray-400">第 {searchMeta.page}/{searchMeta.total_pages} 页</span>
         </div>
       )}
 
@@ -173,30 +211,88 @@ export default function Home() {
             <div
               key={i}
               onClick={() => handleCardClick(card)}
-              className="mb-4 break-inside-avoid bg-white rounded-lg border border-gray-200 p-5 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all"
+              className="mb-4 break-inside-avoid bg-white rounded-lg border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md hover:border-blue-300 transition-all"
             >
-              <div className="flex items-center gap-2 mb-2">
-                <span className={`text-xs px-2 py-0.5 rounded border ${cacheColors[card.cache_level] || cacheColors.SearXNG}`}>
-                  {card.cache_level}
-                </span>
-                {card.trust_score > 0 && (
-                  <span className="text-xs text-gray-400">信任 {card.trust_score.toFixed(0)}</span>
-                )}
-              </div>
-              <h3 className="font-medium text-gray-900 mb-2 leading-snug">{card.title}</h3>
-              {card.content_preview && (
-                <p className="text-sm text-gray-500 leading-relaxed line-clamp-4">{card.content_preview}</p>
+              {/* Thumbnail */}
+              {card.thumbnail && (
+                <img
+                  src={card.thumbnail}
+                  alt=""
+                  className="w-full h-40 object-cover"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
               )}
-              <div className="flex items-center gap-3 mt-2">
-                {card.source && (
-                  <span className="text-xs text-gray-400 truncate">来源: {card.source}</span>
+
+              <div className="p-5">
+                {/* Badges */}
+                <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                  <span className={`text-xs px-2 py-0.5 rounded border ${cacheColors[card.cache_level] || cacheColors.SearXNG}`}>
+                    {card.cache_level}
+                  </span>
+                  {card.engines.length > 0 && card.engines.map((eng, j) => (
+                    <span key={j} className="text-xs px-1.5 py-0.5 rounded bg-gray-50 text-gray-500 border border-gray-100">
+                      {eng}
+                    </span>
+                  ))}
+                  {card.trust_score > 0 && (
+                    <span className="text-xs text-gray-400 ml-auto">信任 {card.trust_score.toFixed(0)}</span>
+                  )}
+                </div>
+
+                {/* Title */}
+                <h3 className="font-medium text-gray-900 mb-2 leading-snug">{card.title}</h3>
+
+                {/* Content preview — detailed */}
+                {card.content_preview && (
+                  <p className="text-sm text-gray-500 leading-relaxed line-clamp-8 mb-2">{card.content_preview}</p>
                 )}
-                {card.published_date && (
-                  <span className="text-xs text-gray-400">{card.published_date}</span>
-                )}
+
+                {/* Footer */}
+                <div className="flex items-center gap-3 pt-2 border-t border-gray-50">
+                  {card.source && (
+                    <span className="text-xs text-gray-400 truncate">来源: {card.source}</span>
+                  )}
+                  {card.published_date && (
+                    <span className="text-xs text-gray-400 ml-auto">{card.published_date}</span>
+                  )}
+                </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {searchMeta && searchMeta.total_pages > 1 && (
+        <div className="flex items-center justify-center gap-2 py-4">
+          <button
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage <= 1 || searching}
+            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-30"
+          >
+            上一页
+          </button>
+          {getPageNumbers().map((num) => (
+            <button
+              key={num}
+              onClick={() => handlePageChange(num)}
+              disabled={searching}
+              className={`px-3 py-1.5 text-sm rounded-lg ${
+                num === currentPage
+                  ? "bg-blue-600 text-white"
+                  : "border border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              {num}
+            </button>
+          ))}
+          <button
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage >= searchMeta.total_pages || searching}
+            className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-30"
+          >
+            下一页
+          </button>
         </div>
       )}
 

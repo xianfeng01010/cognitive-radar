@@ -69,8 +69,11 @@ async def generate_report(keyword: str, strength: str, results: list[dict]) -> d
 async def scan(req: ScanRequest, db: AsyncSession = Depends(get_db)):
     keyword = req.keyword
     strength = classify_strength(keyword)
+    page = req.page
+    page_size = req.page_size
 
-    l1_results = await meili.search_entries(keyword, limit=20, filters='source_type IN ["R", "S"]')
+    l1_limit = page_size * 2
+    l1_results = await meili.search_entries(keyword, limit=l1_limit, filters='source_type IN ["R", "S"]')
     l1_count = len(l1_results)
 
     l2_results = []
@@ -78,57 +81,66 @@ async def scan(req: ScanRequest, db: AsyncSession = Depends(get_db)):
         l2_results = await meili.search_cases(keyword, limit=10)
 
     searxng_results = []
-    if not req.skip_searxng and (l1_count + len(l2_results)) < 15:
+    if not req.skip_searxng:
         try:
-            searxng_results = await searxng_client.search(keyword, limit=15, time_range="month")
+            searxng_results = await searxng_client.search(keyword, limit=page_size * 3, time_range="month")
         except Exception as e:
             logger.warning(f"SearXNG search failed: {e}")
 
-    cards: list[CardItem] = []
+    all_cards: list[CardItem] = []
 
     for r in l1_results:
-        cards.append(CardItem(
+        all_cards.append(CardItem(
             id=str(r.get("id", "")),
             title=r.get("title", ""),
-            content_preview=(r.get("content", "") or "")[:200],
+            content_preview=(r.get("content", "") or "")[:500],
             source=r.get("source_id", ""),
             url=r.get("url", ""),
             cache_level="L1",
             trust_score=float(r.get("trust_score", 50.0)),
             published_date=r.get("published_at", "") or "",
+            thumbnail="",
+            engines=[],
         ))
 
     for r in l2_results:
-        cards.append(CardItem(
+        all_cards.append(CardItem(
             id=str(r.get("id", "")),
             title=r.get("title", ""),
-            content_preview=(r.get("outcome", "") or r.get("content", "") or "")[:200],
+            content_preview=(r.get("outcome", "") or r.get("content", "") or "")[:500],
             source=r.get("source_url", ""),
             url=r.get("source_url", r.get("url", "")),
             cache_level="L2",
             trust_score=float(r.get("trust_score", 50.0)),
+            engines=[],
         ))
 
     for r in searxng_results:
         pd = r.get("publishedDate") or ""
-        cards.append(CardItem(
+        all_cards.append(CardItem(
             id=f"searxng-{r.get('url', '')[:32]}",
             title=r.get("title", ""),
-            content_preview=(r.get("content", "") or "")[:200],
+            content_preview=(r.get("content", "") or "")[:500],
             source=r.get("engine", ""),
             url=r.get("url", ""),
             cache_level="SearXNG",
             trust_score=30.0,
             published_date=str(pd) if pd else "",
+            thumbnail=r.get("img_src") or r.get("thumbnail_src") or "",
+            engines=r.get("engines", []),
         ))
 
-    all_raw = l1_results + l2_results
-    clustered = await auto_cluster(all_raw, keyword) if len(all_raw) >= 3 else None
-    report = await generate_report(keyword, strength, all_raw)
+    total = len(all_cards)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    start = (page - 1) * page_size
+    cards = all_cards[start:start + page_size]
+
+    clustered = await auto_cluster(all_cards[:20], keyword) if total >= 3 else None
+    report = await generate_report(keyword, strength, all_cards[:5])
 
     history = SearchHistory(
         keyword=keyword,
-        result_count=len(cards),
+        result_count=total,
         search_strength=strength,
     )
     db.add(history)
@@ -156,7 +168,10 @@ async def scan(req: ScanRequest, db: AsyncSession = Depends(get_db)):
         keyword=keyword,
         strength=strength,
         cards=cards,
-        total=len(cards),
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
         clustered=clustered,
         report=report,
     )

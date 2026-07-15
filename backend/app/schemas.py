@@ -39,6 +39,8 @@ class SourceOut(BaseModel):
 class ScanRequest(BaseModel):
     keyword: str = Field(..., min_length=1, max_length=500)
     skip_searxng: bool = False
+    page: int = Field(1, ge=1)
+    page_size: int = Field(12, ge=4, le=60)
 
 
 class CardItem(BaseModel):
@@ -50,6 +52,8 @@ class CardItem(BaseModel):
     cache_level: str = ""  # L1, L2, SearXNG
     trust_score: float = 0.0
     published_date: str = ""
+    thumbnail: str = ""
+    engines: list[str] = []
 
 
 class ScanResult(BaseModel):
@@ -57,6 +61,9 @@ class ScanResult(BaseModel):
     strength: str
     cards: list[CardItem] = []
     total: int = 0
+    page: int = 1
+    page_size: int = 12
+    total_pages: int = 1
     clustered: Optional[dict] = None
     report: Optional[dict] = None
 
