@@ -20,6 +20,7 @@ export default function History() {
   const [filter, setFilter] = useState("all");
 
   const load = async () => {
+    setLoading(true);
     try {
       const data = await api.listHistory(filter, 50);
       setItems(data.history || []);

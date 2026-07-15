@@ -6,17 +6,20 @@ logger = logging.getLogger(__name__)
 
 
 async def _run_cleanup():
-    from app.db import async_session
+    from app.db import create_celery_engine
     from app.models.source import Source
     from app.models.buffer import BufferItem
-    from sqlalchemy import select, update, delete
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    eng = create_celery_engine()
+    session_factory = async_sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
 
     expired_sources = 0
     degraded_sources = 0
     expired_buffers = 0
 
-    async with async_session() as db:
-        # L2 sources: expire if no hits in 60 days
+    async with session_factory() as db:
         cutoff_60d = datetime.utcnow() - timedelta(days=60)
         result = await db.execute(
             select(Source).where(
@@ -34,7 +37,6 @@ async def _run_cleanup():
                 source.expires_at = datetime.utcnow()
                 expired_sources += 1
 
-        # Trust score degradation: sources with 0 hits in 30 days get -5
         cutoff_30d = datetime.utcnow() - timedelta(days=30)
         result = await db.execute(
             select(Source).where(
@@ -47,7 +49,6 @@ async def _run_cleanup():
                 source.trust_score = max(source.trust_score - 5.0, 0.0)
                 degraded_sources += 1
 
-        # Expire buffer items past their expiry
         result = await db.execute(
             select(BufferItem).where(
                 BufferItem.expires_at.is_not(None),
@@ -61,6 +62,7 @@ async def _run_cleanup():
 
         await db.commit()
 
+    await eng.dispose()
     logger.info(f"Cleanup done: {expired_sources} sources expired, {degraded_sources} degraded, {expired_buffers} buffers expired")
     return {"expired_sources": expired_sources, "degraded_sources": degraded_sources, "expired_buffers": expired_buffers}
 

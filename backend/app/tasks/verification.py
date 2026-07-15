@@ -6,20 +6,24 @@ logger = logging.getLogger(__name__)
 
 
 async def _verify_item(buffer_item_id: str):
-    from app.db import async_session
+    from app.db import create_celery_engine
     from app.models.buffer import BufferItem, Verification
     from app.models.source import Entry
     from app.integrations.searxng_client import searxng_client
-    from app.integrations.opencode import llm_json, get_embedding
-    from app.integrations import meilisearch_client as meili
+    from app.integrations.opencode import llm_json
     from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-    async with async_session() as db:
+    eng = create_celery_engine()
+    session_factory = async_sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
+
+    async with session_factory() as db:
         result = await db.execute(
             select(BufferItem).where(BufferItem.id == buffer_item_id)
         )
         item = result.scalar_one_or_none()
         if not item:
+            await eng.dispose()
             return {"status": "not_found"}
 
         entry_result = await db.execute(
@@ -27,6 +31,7 @@ async def _verify_item(buffer_item_id: str):
         )
         entry = entry_result.scalar_one_or_none()
         if not entry:
+            await eng.dispose()
             return {"status": "no_entry"}
 
         keywords = entry.keywords if entry.keywords else [entry.title[:50]]
@@ -71,6 +76,7 @@ async def _verify_item(buffer_item_id: str):
         item.verification_count += 1
         await db.commit()
 
+    await eng.dispose()
     return {"status": "ok", "item_id": buffer_item_id}
 
 

@@ -1,22 +1,25 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 
 async def _sync_feeds():
-    from app.db import async_session
+    from app.db import create_celery_engine, celery_session
     from app.models.source import Source, Entry
     from app.integrations.rss.factory import create_rss_engine
     from app.integrations import meilisearch_client as meili
     from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+    eng = create_celery_engine()
+    session_factory = async_sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
     rss_engine = create_rss_engine()
     synced = 0
     errors = 0
 
-    async with async_session() as db:
+    async with session_factory() as db:
         result = await db.execute(
             select(Source).where(Source.status == "active", Source.source_type == "R")
         )
@@ -61,7 +64,10 @@ async def _sync_feeds():
                         "collected_at": entry.collected_at.isoformat() if entry.collected_at else None,
                         "keywords": [],
                     }
-                    await meili.add_documents(meili.INDEX_ENTRIES, [doc])
+                    try:
+                        await meili.add_documents(meili.INDEX_ENTRIES, [doc])
+                    except Exception as me:
+                        logger.warning(f"Meilisearch indexing failed for entry {entry.id}: {me}")
 
                     source.hit_count += 1
                     source.last_hit_at = datetime.utcnow()
@@ -69,11 +75,13 @@ async def _sync_feeds():
 
                     await rss_engine.mark_read(e.id)
 
-                await db.commit()
+                    await db.commit()
             except Exception as e:
                 logger.error(f"Failed to sync source {source.id}: {e}")
+                await db.rollback()
                 errors += 1
 
+    await eng.dispose()
     logger.info(f"Feed sync done: {synced} new entries, {errors} errors")
     return {"synced": synced, "errors": errors}
 

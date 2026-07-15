@@ -1,15 +1,23 @@
+import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select
 import logging
 
 from app.db import get_db
 from app.models.source import Source
 from app.integrations.rss.factory import create_rss_engine
-from app.schemas import SourceCreate, SourceUpdate, SourceOut
+from app.schemas import SourceCreate, SourceUpdate
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _validate_uuid(val: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(val)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail=f"无效的ID: {val}")
 
 
 @router.get("/")
@@ -55,7 +63,8 @@ async def add_source(req: SourceCreate, db: AsyncSession = Depends(get_db)):
 
 @router.get("/{source_id}")
 async def get_source(source_id: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Source).where(Source.id == source_id))
+    uid = _validate_uuid(source_id)
+    result = await db.execute(select(Source).where(Source.id == uid))
     source = result.scalar_one_or_none()
     if not source:
         raise HTTPException(status_code=404, detail="来源不存在")
@@ -64,7 +73,8 @@ async def get_source(source_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.put("/{source_id}")
 async def update_source(source_id: str, req: SourceUpdate, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Source).where(Source.id == source_id))
+    uid = _validate_uuid(source_id)
+    result = await db.execute(select(Source).where(Source.id == uid))
     source = result.scalar_one_or_none()
     if not source:
         raise HTTPException(status_code=404, detail="来源不存在")
@@ -90,7 +100,8 @@ async def update_source(source_id: str, req: SourceUpdate, db: AsyncSession = De
 
 @router.delete("/{source_id}")
 async def delete_source(source_id: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Source).where(Source.id == source_id))
+    uid = _validate_uuid(source_id)
+    result = await db.execute(select(Source).where(Source.id == uid))
     source = result.scalar_one_or_none()
     if not source:
         raise HTTPException(status_code=404, detail="来源不存在")

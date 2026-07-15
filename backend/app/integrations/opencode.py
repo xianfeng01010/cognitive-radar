@@ -27,10 +27,12 @@ async def llm_json(prompt: str, system: str = "", model: str = "", max_tokens: i
     raw = await llm_complete(prompt, system, model, max_tokens, temperature=0.1)
     raw = raw.strip()
     if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    return json.loads(raw.strip())
+        parts = raw.split("```")
+        if len(parts) > 1:
+            raw = parts[1].strip()
+            if raw[:4].lower() == "json":
+                raw = raw[4:].strip()
+    return json.loads(raw)
 
 
 async def get_embedding(text: str, model: str = "") -> list[float]:

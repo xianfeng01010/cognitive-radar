@@ -54,7 +54,7 @@ async def generate_report(keyword: str, strength: str, results: list[dict]) -> d
         return None
     try:
         tops = results[:5]
-        context = "\n".join(f"- {r.get('title', '')}: {r.get('content', '')[:100]}" for r in tops)
+        context = "\n".join(f"- {r.get('title', '')}: {(r.get('content_preview', '') or '')[:100]}" for r in tops)
         if strength == "strong":
             prompt = f"搜索关键词：{keyword}\n\n以下是相关搜索结果：\n{context}\n\n请生成一份结构化报告，包含：1) 摘要 2) 关键发现 3) 人物/机构 4) 时间线 5) 结论。返回JSON格式。"
         else:
@@ -135,8 +135,10 @@ async def scan(req: ScanRequest, db: AsyncSession = Depends(get_db)):
     start = (page - 1) * page_size
     cards = all_cards[start:start + page_size]
 
-    clustered = await auto_cluster(all_cards[:20], keyword) if total >= 3 else None
-    report = await generate_report(keyword, strength, all_cards[:5])
+    # Convert CardItem to dict for LLM helper functions that use .get()
+    all_cards_dicts = [c.model_dump() for c in all_cards[:20]]
+    clustered = await auto_cluster(all_cards_dicts, keyword) if total >= 3 else None
+    report = await generate_report(keyword, strength, all_cards_dicts[:5])
 
     history = SearchHistory(
         keyword=keyword,

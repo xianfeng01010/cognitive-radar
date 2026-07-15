@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "@/lib/api";
 
 interface CardItem {
@@ -83,6 +83,7 @@ export default function Home() {
   const [selectedCard, setSelectedCard] = useState<CardItem | null>(null);
   const [detail, setDetail] = useState<CardDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const detailReqId = useRef(0);
 
   const loadPushes = useCallback(async () => {
     try {
@@ -119,9 +120,25 @@ export default function Home() {
     return () => document.body.classList.remove("modal-open");
   }, [selectedCard]);
 
+  // Escape key to close modal
+  useEffect(() => {
+    if (!selectedCard) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeModal();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectedCard]);
+
   const handleSearch = async (keyword: string, page: number = 1) => {
     const kw = keyword || searchKeyword;
-    if (!kw.trim()) return;
+    if (!kw.trim()) {
+      // F2: Clear search when empty keyword submitted
+      setCards([]);
+      setSearchMeta(null);
+      setCurrentPage(1);
+      return;
+    }
     setSearchKeyword(kw);
     setSearching(true);
     setCards([]);
@@ -138,12 +155,21 @@ export default function Home() {
         page_size: result.page_size,
         total_pages: result.total_pages,
       });
+      // F4: Refresh search history after successful search
+      loadHistory();
     } catch (e: any) {
       setSearchMeta({ strength: "error", total: 0, keyword: kw, page: 1, page_size: PAGE_SIZE, total_pages: 1 });
       console.error(e);
     } finally {
       setSearching(false);
     }
+  };
+
+  const handleClearSearch = () => {
+    setSearchKeyword("");
+    setCards([]);
+    setSearchMeta(null);
+    setCurrentPage(1);
   };
 
   const handlePageChange = (page: number) => {
@@ -154,10 +180,12 @@ export default function Home() {
     handleSearch(kw, 1);
   };
 
+  // F1: Race condition fix - request ID guard
   const handleCardClick = async (card: CardItem) => {
     setSelectedCard(card);
     setDetail(null);
     setDetailLoading(true);
+    const reqId = ++detailReqId.current;
     try {
       const result = await api.getCardDetail({
         title: card.title,
@@ -165,8 +193,10 @@ export default function Home() {
         url: card.url,
         source: card.source,
       });
+      if (reqId !== detailReqId.current) return;
       setDetail(result);
     } catch (e) {
+      if (reqId !== detailReqId.current) return;
       console.error(e);
       setDetail({
         title: card.title,
@@ -178,7 +208,7 @@ export default function Home() {
         source_url: card.url,
       });
     } finally {
-      setDetailLoading(false);
+      if (reqId === detailReqId.current) setDetailLoading(false);
     }
   };
 
@@ -205,7 +235,8 @@ export default function Home() {
     return nums;
   };
 
-  const hasSearch = cards.length > 0 || searching;
+  // F3: Fix hasSearch - based on searchMeta, not cards.length
+  const hasSearch = searchMeta !== null || searching;
 
   return (
     <div className="space-y-6">
@@ -220,6 +251,15 @@ export default function Home() {
             placeholder="输入搜索关键词..."
             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
           />
+          {searchMeta && (
+            <button
+              onClick={handleClearSearch}
+              className="px-3 py-2 text-gray-400 hover:text-gray-600 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+              title="清除搜索"
+            >
+              ✕
+            </button>
+          )}
           <button
             onClick={() => handleSearch(searchKeyword, 1)}
             disabled={searching}
@@ -229,7 +269,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Search history chips — only when no active search */}
+        {/* Search history chips - only when no active search */}
         {!hasSearch && searchHistory.length > 0 && (
           <div className="flex items-center gap-2 mt-2 flex-wrap">
             <span className="text-xs text-gray-400">最近搜索:</span>
@@ -279,7 +319,7 @@ export default function Home() {
         <div className="columns-1 md:columns-2 lg:columns-3 gap-4 [column-fill:_balance]">
           {cards.map((card, i) => (
             <div
-              key={i}
+              key={card.id || i}
               onClick={() => handleCardClick(card)}
               style={{ "--delay": `${i * 50}ms` } as React.CSSProperties}
               className="animate-fade-in-up mb-4 break-inside-avoid bg-white rounded-lg border border-gray-200 overflow-hidden cursor-pointer hover:shadow-lg hover:border-blue-300 hover:-translate-y-0.5 transition-all duration-200"
@@ -424,7 +464,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* ── Detail Modal — Fixed Template + Scroll Isolation ── */}
+      {/* ── Detail Modal - Fixed Template + Scroll Isolation ── */}
       {selectedCard && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in touch-none"

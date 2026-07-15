@@ -6,13 +6,17 @@ logger = logging.getLogger(__name__)
 
 
 async def _generate_health_report():
-    from app.db import async_session
+    from app.db import create_celery_engine
     from app.models.history import HealthReport, PushHistory, SearchHistory, ViewHistory
     from app.models.source import Source
     from app.models.buffer import BufferItem
     from sqlalchemy import select, func
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-    async with async_session() as db:
+    eng = create_celery_engine()
+    session_factory = async_sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
+
+    async with session_factory() as db:
         week_ago = datetime.utcnow() - timedelta(days=7)
 
         total_sources = await db.scalar(
@@ -85,6 +89,7 @@ async def _generate_health_report():
         db.add(hr)
         await db.commit()
 
+    await eng.dispose()
     logger.info("Health report generated")
     return report_data
 

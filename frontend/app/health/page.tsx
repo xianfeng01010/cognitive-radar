@@ -8,6 +8,7 @@ export default function Health() {
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
+    setLoading(true);
     try {
       const [h, r] = await Promise.all([
         api.systemHealth().catch(() => null),
@@ -28,9 +29,17 @@ export default function Health() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">系统健康</h1>
-        <p className="text-gray-500 text-sm mt-1">组件状态 + 周报</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">系统健康</h1>
+          <p className="text-gray-500 text-sm mt-1">组件状态 + 周报</p>
+        </div>
+        <button
+          onClick={() => { setLoading(true); load(); }}
+          className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors active:scale-95"
+        >
+          刷新
+        </button>
       </div>
 
       {loading ? (

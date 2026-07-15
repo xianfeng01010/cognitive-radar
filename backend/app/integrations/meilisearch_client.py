@@ -22,9 +22,8 @@ async def _get_client() -> httpx.AsyncClient:
 async def init_indexes():
     client = await _get_client()
     for index_uid in [INDEX_ENTRIES, INDEX_CASES, INDEX_PROVENANCE]:
-        try:
-            await client.get(f"/indexes/{index_uid}")
-        except httpx.HTTPStatusError:
+        resp = await client.get(f"/indexes/{index_uid}")
+        if resp.status_code == 404:
             await client.post("/indexes", json={"uid": index_uid, "primaryKey": "id"})
 
     await client.put(f"/indexes/{INDEX_ENTRIES}/settings", json={

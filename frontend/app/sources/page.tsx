@@ -131,7 +131,9 @@ export default function Sources() {
                 <tr key={s.id} className="hover:bg-blue-50/30 transition-colors">
                   <td className="px-4 py-3">
                     <div className="font-medium text-gray-900">{s.name}</div>
-                    <div className="text-xs text-gray-400 truncate max-w-xs">{s.url}</div>
+                    <a href={s.url} target="_blank" className="text-xs text-blue-400 hover:text-blue-600 truncate max-w-xs block">
+                      {s.url}
+                    </a>
                   </td>
                   <td className="px-4 py-3">
                     <span className={s.cache_level === "L1" ? "text-blue-600 font-medium" : "text-amber-600"}>

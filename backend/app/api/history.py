@@ -1,13 +1,19 @@
 import uuid
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
-from datetime import datetime
+from sqlalchemy import select, delete, func
 
 from app.db import get_db
 from app.models.history import SearchHistory, ViewHistory, DeleteLog
 
 router = APIRouter()
+
+
+def _validate_uuid(val: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(val)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail=f"无效的ID: {val}")
 
 
 @router.get("/")
@@ -36,28 +42,7 @@ async def list_history(
     return {"history": results[:limit], "type": history_type}
 
 
-@router.delete("/{history_id}")
-async def delete_one(history_id: str, db: AsyncSession = Depends(get_db)):
-    deleted = False
-    r = await db.execute(select(SearchHistory).where(SearchHistory.id == history_id))
-    row = r.scalar_one_or_none()
-    if row:
-        await db.delete(row)
-        deleted = True
-    else:
-        r = await db.execute(select(ViewHistory).where(ViewHistory.id == history_id))
-        row = r.scalar_one_or_none()
-        if row:
-            await db.delete(row)
-            deleted = True
-
-    if not deleted:
-        raise HTTPException(status_code=404, detail="记录不存在")
-
-    db.add(DeleteLog(delete_type="single", deleted_ids=[history_id]))
-    await db.commit()
-    return {"deleted_id": history_id, "status": "deleted"}
-
+# --- Specific routes MUST be above /{history_id} to avoid shadowing ---
 
 @router.delete("/all")
 async def delete_all(confirm: bool = Query(False), db: AsyncSession = Depends(get_db)):
@@ -91,7 +76,7 @@ async def delete_all_search(confirm: bool = Query(False), db: AsyncSession = Dep
     ids = [str(row.id) for row in r.scalars().all()]
     await db.execute(delete(SearchHistory))
 
-    db.add(DeleteLog(delete_type="search", deleted_ids=ids))
+    db.add(DeleteLog(delete_type="search", deleted_ids={"ids": ids}))
     await db.commit()
     return {"status": "deleted", "type": "search", "count": len(ids)}
 
@@ -105,6 +90,31 @@ async def delete_all_view(confirm: bool = Query(False), db: AsyncSession = Depen
     ids = [str(row.id) for row in r.scalars().all()]
     await db.execute(delete(ViewHistory))
 
-    db.add(DeleteLog(delete_type="view", deleted_ids=ids))
+    db.add(DeleteLog(delete_type="view", deleted_ids={"ids": ids}))
     await db.commit()
     return {"status": "deleted", "type": "view", "count": len(ids)}
+
+
+@router.delete("/{history_id}")
+async def delete_one(history_id: str, db: AsyncSession = Depends(get_db)):
+    uid = _validate_uuid(history_id)
+    deleted = False
+
+    r = await db.execute(select(SearchHistory).where(SearchHistory.id == uid))
+    row = r.scalar_one_or_none()
+    if row:
+        await db.delete(row)
+        deleted = True
+    else:
+        r = await db.execute(select(ViewHistory).where(ViewHistory.id == uid))
+        row = r.scalar_one_or_none()
+        if row:
+            await db.delete(row)
+            deleted = True
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="记录不存在")
+
+    db.add(DeleteLog(delete_type="single", deleted_ids={"ids": [history_id]}))
+    await db.commit()
+    return {"deleted_id": history_id, "status": "deleted"}

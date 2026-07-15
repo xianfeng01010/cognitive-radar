@@ -1,19 +1,23 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 
 async def _check_and_push():
-    from app.db import async_session
+    from app.db import create_celery_engine
     from app.models.buffer import BufferItem
     from app.models.history import PushHistory
     from app.models.source import Entry, Source
     from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    eng = create_celery_engine()
+    session_factory = async_sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
 
     pushed = 0
-    async with async_session() as db:
+    async with session_factory() as db:
         result = await db.execute(
             select(BufferItem)
             .where(
@@ -62,6 +66,7 @@ async def _check_and_push():
 
         await db.commit()
 
+    await eng.dispose()
     logger.info(f"Push check done: {pushed} items pushed")
     return {"pushed": pushed}
 
