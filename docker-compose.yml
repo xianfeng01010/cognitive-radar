@@ -1,0 +1,197 @@
+name: cognitive-radar
+
+services:
+  # === 数据层 ===
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: cr-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cognitive_radar
+      POSTGRES_USER: ${DB_USER:-radar}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-radar_dev_2026}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-radar}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: cr-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.37
+    container_name: cr-meilisearch
+    restart: unless-stopped
+    environment:
+      MEILI_ENV: development
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-meili_dev_key_2026}
+      MEILI_NO_ANALYTICS: "true"
+    ports:
+      - "7700:7700"
+    volumes:
+      - meilidata:/meili_data
+
+  # === 采集层 ===
+
+  miniflux:
+    image: miniflux/miniflux:latest
+    container_name: cr-miniflux
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-radar}:${DB_PASSWORD:-radar_dev_2026}@postgres/cognitive_radar?sslmode=disable
+      RUN_MIGRATIONS: "1"
+      CREATE_ADMIN: "1"
+      ADMIN_USERNAME: ${MINIFLUX_USER:-admin}
+      ADMIN_PASSWORD: ${MINIFLUX_PASSWORD:-admin123}
+      POLLING_FREQUENCY: "30"
+      BATCH_SIZE: "50"
+      POLLING_SCHEDULER: entry_count_based
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: cr-searxng
+    restart: unless-stopped
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      SEARXNG_BASE_URL: http://localhost:8888/
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-searxng_secret_2026}
+    ports:
+      - "8888:8080"
+
+  # === 应用层 ===
+
+  api:
+    build: ./backend
+    container_name: cr-api
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-radar}:${DB_PASSWORD:-radar_dev_2026}@postgres:5432/cognitive_radar
+      REDIS_URL: redis://redis:6379/0
+      MEILI_URL: http://meilisearch:7700
+      MEILI_KEY: ${MEILI_MASTER_KEY:-meili_dev_key_2026}
+      MINIFLUX_URL: http://miniflux:8080
+      MINIFLUX_USER: ${MINIFLUX_USER:-admin}
+      MINIFLUX_PASSWORD: ${MINIFLUX_PASSWORD:-admin123}
+      SEARXNG_URL: http://searxng:8080
+      LLM_BASE_URL: https://opencode.ai/zen/v1
+      LLM_API_KEY: ${OPENCODE_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash-free}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-google/gemini-embedding-001}
+      RSS_ENGINE_TYPE: miniflux
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      meilisearch:
+        condition: service_started
+
+  celery-worker:
+    build: ./backend
+    container_name: cr-celery-worker
+    restart: unless-stopped
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=2
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-radar}:${DB_PASSWORD:-radar_dev_2026}@postgres:5432/cognitive_radar
+      REDIS_URL: redis://redis:6379/0
+      MEILI_URL: http://meilisearch:7700
+      MEILI_KEY: ${MEILI_MASTER_KEY:-meili_dev_key_2026}
+      MINIFLUX_URL: http://miniflux:8080
+      MINIFLUX_USER: ${MINIFLUX_USER:-admin}
+      MINIFLUX_PASSWORD: ${MINIFLUX_PASSWORD:-admin123}
+      SEARXNG_URL: http://searxng:8080
+      LLM_BASE_URL: https://opencode.ai/zen/v1
+      LLM_API_KEY: ${OPENCODE_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash-free}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-google/gemini-embedding-001}
+      RSS_ENGINE_TYPE: miniflux
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - postgres
+      - redis
+
+  celery-beat:
+    build: ./backend
+    container_name: cr-celery-beat
+    restart: unless-stopped
+    command: celery -A app.celery_app beat --loglevel=info
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-radar}:${DB_PASSWORD:-radar_dev_2026}@postgres:5432/cognitive_radar
+      REDIS_URL: redis://redis:6379/0
+      MEILI_URL: http://meilisearch:7700
+      MEILI_KEY: ${MEILI_MASTER_KEY:-meili_dev_key_2026}
+      MINIFLUX_URL: http://miniflux:8080
+      MINIFLUX_USER: ${MINIFLUX_USER:-admin}
+      MINIFLUX_PASSWORD: ${MINIFLUX_PASSWORD:-admin123}
+      SEARXNG_URL: http://searxng:8080
+      LLM_BASE_URL: https://opencode.ai/zen/v1
+      LLM_API_KEY: ${OPENCODE_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-v4-flash-free}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-google/gemini-embedding-001}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - redis
+
+  web:
+    build: ./frontend
+    container_name: cr-web
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NODE_ENV: development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - api
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: cr-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+    depends_on:
+      - api
+      - web
+
+volumes:
+  pgdata:
+  redisdata:
+  meilidata:
+  caddydata:

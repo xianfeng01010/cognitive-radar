@@ -1,0 +1,29 @@
+:80 {
+    # API backend
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+
+    # Meilisearch dashboard
+    handle /meili/* {
+        rewrite * {path}
+        reverse_proxy meilisearch:7700
+    }
+
+    # Miniflux UI
+    handle /reader/* {
+        rewrite * {path}
+        reverse_proxy miniflux:8080
+    }
+
+    # SearXNG
+    handle /search-engine/* {
+        rewrite * {path}
+        reverse_proxy searxng:8080
+    }
+
+    # Next.js frontend
+    handle {
+        reverse_proxy web:3000
+    }
+}
