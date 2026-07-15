@@ -62,7 +62,7 @@ export default function Sources() {
         </div>
         <button
           onClick={() => setShowAdd(!showAdd)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:scale-95 transition-all"
         >
           {showAdd ? "取消" : "+ 添加来源"}
         </button>
@@ -95,15 +95,15 @@ export default function Sources() {
       )}
 
       <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <h2 className="font-semibold text-lg mb-2">L1 核心订阅</h2>
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border border-blue-200 p-6">
+          <h2 className="font-semibold text-lg mb-2 text-blue-900">L1 核心订阅</h2>
           <p className="text-3xl font-bold text-blue-600">{l1Count}</p>
-          <p className="text-gray-400 text-sm mt-1">预设 / 晋升的高质量源</p>
+          <p className="text-blue-400 text-sm mt-1">预设 / 晋升的高质量源</p>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <h2 className="font-semibold text-lg mb-2">L2 候选订阅</h2>
+        <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-lg border border-amber-200 p-6">
+          <h2 className="font-semibold text-lg mb-2 text-amber-900">L2 候选订阅</h2>
           <p className="text-3xl font-bold text-amber-600">{l2Count}</p>
-          <p className="text-gray-400 text-sm mt-1">拓展搜索发现的候选源</p>
+          <p className="text-amber-400 text-sm mt-1">拓展搜索发现的候选源</p>
         </div>
       </div>
 
@@ -128,7 +128,7 @@ export default function Sources() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {sources.map((s) => (
-                <tr key={s.id} className="hover:bg-gray-50">
+                <tr key={s.id} className="hover:bg-blue-50/30 transition-colors">
                   <td className="px-4 py-3">
                     <div className="font-medium text-gray-900">{s.name}</div>
                     <div className="text-xs text-gray-400 truncate max-w-xs">{s.url}</div>

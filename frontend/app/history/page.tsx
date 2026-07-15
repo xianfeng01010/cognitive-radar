@@ -81,8 +81,12 @@ export default function History() {
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-          {items.map((item) => (
-            <div key={item.id} className="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+          {items.map((item, i) => (
+            <div
+              key={item.id}
+              style={{ "--delay": `${i * 30}ms` } as React.CSSProperties}
+              className="animate-fade-in-up flex items-center justify-between px-4 py-3 hover:bg-blue-50/30 transition-colors"
+            >
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className={`text-xs px-2 py-0.5 rounded ${item.type === "search" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>

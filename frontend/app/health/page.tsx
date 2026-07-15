@@ -47,8 +47,11 @@ export default function Health() {
             </div>
             <div className="grid grid-cols-3 gap-3">
               {health?.components && Object.entries(health.components).map(([name, status]: [string, any]) => (
-                <div key={name} className="border border-gray-200 rounded-lg p-3">
-                  <div className="text-xs text-gray-500">{name}</div>
+                <div key={name} className="border border-gray-200 rounded-lg p-3 hover:shadow-sm transition-shadow">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`inline-block w-2 h-2 rounded-full ${status.includes("healthy") ? "bg-green-500 animate-pulse-soft" : "bg-red-500"}`} />
+                    <div className="text-xs text-gray-500">{name}</div>
+                  </div>
                   <div className={`text-sm font-medium mt-1 ${status.includes("healthy") ? "text-green-600" : "text-red-600"}`}>
                     {status}
                   </div>
