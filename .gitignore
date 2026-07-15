@@ -58,6 +58,11 @@ caddydata/
 logs/
 *.log
 
+# Build artifacts
+celerybeat-schedule
+celerybeat-schedule.db
+next-env.d.ts
+
 # Test
 coverage/
 .coverage

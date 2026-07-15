@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Float, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, Float, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import relationship
 from app.models.base import Base
 
 
@@ -22,13 +23,15 @@ class Case(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title = Column(Text)
-    who = Column(JSONB, default={})
-    timeline_data = Column("timeline", JSONB, default=[])
-    key_decisions = Column(JSONB, default=[])
+    who = Column(JSONB, default=dict)
+    timeline_data = Column("timeline", JSONB, default=list)
+    key_decisions = Column(JSONB, default=list)
     outcome = Column(Text)
     source_url = Column(Text)
-    source_id = Column(UUID(as_uuid=True), ForeignKey("sources.id"), nullable=True)
+    source_id = Column(UUID(as_uuid=True), ForeignKey("sources.id", ondelete="SET NULL"), nullable=True)
     trust_score = Column(Float, default=50.0)
-    verification_status = Column(String(20), default="pending")
-    related_keywords = Column(JSONB, default=[])
+    verification_status = Column(String(20), default="pending")  # pending, verified, rejected
+    related_keywords = Column(JSONB, default=list)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    source = relationship("Source")

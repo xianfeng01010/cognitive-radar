@@ -1,46 +1,72 @@
-import meilisearch
+import httpx
 from app.config import settings
 
-meili_client = meilisearch.Client(settings.MEILI_URL, settings.MEILI_KEY)
+MEILI_URL = settings.MEILI_URL.rstrip("/")
+MEILI_KEY = settings.MEILI_KEY
+_headers = {"Authorization": f"Bearer {MEILI_KEY}"}
 
 INDEX_ENTRIES = "entries"
 INDEX_CASES = "cases"
 INDEX_PROVENANCE = "provenance_trees"
 
+_client: httpx.AsyncClient | None = None
+
+
+async def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(base_url=MEILI_URL, headers=_headers, timeout=10.0)
+    return _client
+
 
 async def init_indexes():
-    for index_uid, primary_key in [
-        (INDEX_ENTRIES, "id"),
-        (INDEX_CASES, "id"),
-        (INDEX_PROVENANCE, "id"),
-    ]:
+    client = await _get_client()
+    for index_uid in [INDEX_ENTRIES, INDEX_CASES, INDEX_PROVENANCE]:
         try:
-            meili_client.get_index(index_uid)
-        except Exception:
-            meili_client.create_index(index_uid, {"primaryKey": primary_key})
+            await client.get(f"/indexes/{index_uid}")
+        except httpx.HTTPStatusError:
+            await client.post("/indexes", json={"uid": index_uid, "primaryKey": "id"})
 
-    entries_index = meili_client.index(INDEX_ENTRIES)
-    entries_index.update_searchable_attributes(["title", "content", "keywords"])
-    entries_index.update_filterable_attributes(["source_type", "source_id", "published_at"])
-    entries_index.update_sortable_attributes(["published_at", "collected_at"])
-
-    cases_index = meili_client.index(INDEX_CASES)
-    cases_index.update_searchable_attributes(["title", "who", "outcome", "keywords"])
-    cases_index.update_filterable_attributes(["verification_status", "trust_score"])
+    await client.put(f"/indexes/{INDEX_ENTRIES}/settings", json={
+        "searchableAttributes": ["title", "content", "keywords"],
+        "filterableAttributes": ["source_type", "source_id", "published_at"],
+        "sortableAttributes": ["published_at", "collected_at"],
+    })
+    await client.put(f"/indexes/{INDEX_CASES}/settings", json={
+        "searchableAttributes": ["title", "who", "outcome", "related_keywords"],
+        "filterableAttributes": ["verification_status", "trust_score"],
+    })
 
 
 async def add_documents(index_uid: str, documents: list[dict]):
-    meili_client.index(index_uid).add_documents(documents)
+    client = await _get_client()
+    resp = await client.post(f"/indexes/{index_uid}/documents?primaryKey=id", json=documents)
+    resp.raise_for_status()
+    return resp.json()
 
 
 async def search_entries(query: str, limit: int = 20, filters: str = "") -> list[dict]:
+    client = await _get_client()
     opts = {"limit": limit}
     if filters:
         opts["filter"] = filters
-    results = meili_client.index(INDEX_ENTRIES).search(query, opts)
-    return results.get("hits", [])
+    resp = await client.post(f"/indexes/{INDEX_ENTRIES}/search", json={"q": query, **opts})
+    resp.raise_for_status()
+    return resp.json().get("hits", [])
 
 
 async def search_cases(query: str, limit: int = 10) -> list[dict]:
-    results = meili_client.index(INDEX_CASES).search(query, {"limit": limit})
-    return results.get("hits", [])
+    client = await _get_client()
+    resp = await client.post(f"/indexes/{INDEX_CASES}/search", json={"q": query, "limit": limit})
+    resp.raise_for_status()
+    return resp.json().get("hits", [])
+
+
+async def health() -> dict:
+    client = await _get_client()
+    try:
+        resp = await client.get("/health")
+        resp.raise_for_status()
+        return {"status": "healthy"}
+    except Exception as e:
+        return {"status": "unhealthy", "error": str(e)}

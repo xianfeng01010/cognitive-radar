@@ -15,6 +15,7 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-radar}"]
       interval: 10s
@@ -51,19 +52,19 @@ services:
     container_name: cr-miniflux
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://${DB_USER:-radar}:${DB_PASSWORD:-radar_dev_2026}@postgres/cognitive_radar?sslmode=disable
+      DATABASE_URL: postgres://${DB_USER:-radar}:${DB_PASSWORD:-radar_dev_2026}@postgres/miniflux?sslmode=disable
       RUN_MIGRATIONS: "1"
       CREATE_ADMIN: "1"
       ADMIN_USERNAME: ${MINIFLUX_USER:-admin}
       ADMIN_PASSWORD: ${MINIFLUX_PASSWORD:-admin123}
       POLLING_FREQUENCY: "30"
       BATCH_SIZE: "50"
-      POLLING_SCHEDULER: entry_count_based
+      POLLING_SCHEDULER: entry_frequency
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "8090:8080"
 
   searxng:
     image: searxng/searxng:latest
@@ -167,6 +168,7 @@ services:
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
+      INTERNAL_API_URL: http://api:8000
       NODE_ENV: development
     ports:
       - "3000:3000"

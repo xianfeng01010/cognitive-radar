@@ -1,0 +1,2 @@
+CREATE DATABASE miniflux;
+GRANT ALL PRIVILEGES ON DATABASE miniflux TO radar;

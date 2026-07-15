@@ -1,8 +1,25 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import search, sources, push, health, history
 from app.config import settings
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from app.db import init_db
+    from app.integrations import meilisearch_client as meili
+    try:
+        await init_db()
+    except Exception as e:
+        print(f"DB init warning: {e}")
+    try:
+        await meili.init_indexes()
+    except Exception as e:
+        print(f"Meilisearch init warning: {e}")
+    yield
+
 
 app = FastAPI(
     title="Cognitive Radar API",
@@ -10,11 +27,12 @@ app = FastAPI(
     version="0.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,13 +58,9 @@ async def root():
 
 @app.get("/api/health/llm")
 async def llm_health():
-    from app.integrations.opencode import llm_client
+    from app.integrations.opencode import llm_complete
     try:
-        response = await llm_client.chat.completions.create(
-            model=settings.LLM_MODEL,
-            messages=[{"role": "user", "content": "ping"}],
-            max_tokens=5,
-        )
-        return {"status": "healthy", "model": settings.LLM_MODEL, "response": response.choices[0].message.content}
+        response = await llm_complete("ping", max_tokens=5)
+        return {"status": "healthy", "model": settings.LLM_MODEL, "response": response}
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}
